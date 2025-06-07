@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poker Hand Simulator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .input-group {
+            margin: 15px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        label {
+            font-weight: bold;
+            color: #333;
+        }
+        input {
+            padding: 8px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: 100%;
+            max-width: 300px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: none;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Poker Hand Simulator</h1>
+    <div class="input-group">
+        <label for="player1">Player 1 Hand (e.g., As,5h):</label>
+        <input type="text" id="player1" placeholder="Enter two cards, comma-separated">
+    </div>
+    <div class="input-group">
+        <label for="player2">Player 2 Hand (e.g., 8d,9c):</label>
+        <input type="text" id="player2" placeholder="Enter two cards, comma-separated">
+    </div>
+    <div class="input-group">
+        <label for="community">Community Cards (e.g., 2s,6h,7d):</label>
+        <input type="text" id="community" placeholder="Enter 0-4 cards, comma-separated">
+    </div>
+    <button onclick="runSimulation()">Run Simulation</button>
+    <div id="result"></div>
+
+    <script>
+        // Define deck and hand ranks
+        const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', 'T'];
+        const suits = ['s', 'h', 'd', 'c'];
+        const deck = ranks.flatMap(r => suits.map(s => r + s));
+        const HAND_RANKS = {
+            'FourOfAKind': 6,
+            'FullHouse': 5,
+            'Straight': 4,
+            'ThreeOfAKind': 3,
+            'TwoPair': 2,
+            'Pair': 1,
+            'HighCard': 0
+        };
+
+        // Convert card to numerical value
+        function cardToValue(card) {
+            const rank = card[0];
+            if (rank === 'A') return 1;
+            if (rank === 'T') return 10;
+            return parseInt(rank);
+        }
+
+        // Convert value back to rank
+        function valueToRank(value) {
+            if (value === 1) return 'A';
+            if (value === 10) return 'T';
+            return value.toString();
+        }
+
+        // Count occurrences in an array
+        function countOccurrences(arr) {
+            const counts = {};
+            arr.forEach(item => {
+                counts[item] = (counts[item] || 0) + 1;
+            });
+            return counts;
+        }
+
+        // Evaluate a hand
+        function evaluateHand(hand, communityCards) {
+            const allCards = [...hand, ...communityCards];
+            const values = allCards.map(cardToValue);
+            const valueCounts = countOccurrences(values);
+
+            // Check Four of a Kind
+            for (let value in valueCounts) {
+                value = parseInt(value);
+                if (valueCounts[value] >= 4) {
+                    const kicker = Math.max(...values.filter(v => v !== value), 0);
+                    return ['FourOfAKind', value, kicker];
+                }
+            }
+
+            // Check Full House
+            const trips = Object.keys(valueCounts).filter(v => valueCounts[v] >= 3).map(Number);
+            const pairs = Object.keys(valueCounts).filter(v => valueCounts[v] >= 2).map(Number);
+            if (trips.length && pairs.length) {
+                const tripValue = Math.max(...trips);
+                const pairValue = Math.max(...pairs.filter(p => p !== tripValue), 0);
+                if (pairValue) return ['FullHouse', tripValue, pairValue];
+            }
+
+            // Check Straight
+            const uniqueValues = [...new Set(values)].sort((a, b) => a - b);
+            for (let i = 0; i <= uniqueValues.length - 5; i++) {
+                const slice = uniqueValues.slice(i, i + 5);
+                if (slice.every((v, idx) => v === uniqueValues[i] + idx)) {
+                    return ['Straight', uniqueValues[i + 4]];
+                }
+            }
+
+            // Check Three of a Kind
+            for (let value in valueCounts) {
+                value = parseInt(value);
+                if (valueCounts[value] >= 3) {
+                    const kickers = values.filter(v => v !== value).sort((a, b) => b - a).slice(0, 2);
+                    return ['ThreeOfAKind', value, kickers];
+                }
+            }
+
+            // Check Two Pair
+            if (pairs.length >= 2) {
+                const topPairs = pairs.sort((a, b) => b - a).slice(0, 2);
+                const kicker = Math.max(...values.filter(v => !topPairs.includes(v)), 0);
+                return ['TwoPair', topPairs, kicker];
+            }
+
+            // Check Pair
+            if (pairs.length >= 1) {
+                const pairValue = Math.max(...pairs);
+                const kickers = values.filter(v => v !== pairValue).sort((a, b) => b - a).slice(0, 3);
+                return ['Pair', pairValue, kickers];
+            }
+
+            // High Card
+            const highCards = values.sort((a, b) => b - a).slice(0, 5);
+            return ['HighCard', highCards];
+        }
+
+        // Compare two hands
+        function compareHands(hand1, hand2, communityCards) {
+            const eval1 = evaluateHand(hand1, communityCards);
+            const eval2 = evaluateHand(hand2, communityCards);
+
+            const rank1 = HAND_RANKS[eval1[0]];
+            const rank2 = HAND_RANKS[eval2[0]];
+            if (rank1 !== rank2) return rank1 > rank2 ? 1 : -1;
+
+            if (eval1[0] === 'FourOfAKind') {
+                if (eval1[1] !== eval2[1]) return eval1[1] > eval2[1] ? 1 : -1;
+                return eval1[2] > eval2[2] ? 1 : eval1[2] < eval2[2] ? -1 : 0;
+            } else if (eval1[0] === 'FullHouse') {
+                if (eval1[1] !== eval2[1]) return eval1[1] > eval2[1] ? 1 : -1;
+                return eval1[2] > eval2[2] ? 1 : eval1[2] < eval2[2] ? -1 : 0;
+            } else if (eval1[0] === 'Straight') {
+                return eval1[1] > eval2[1] ? 1 : eval1[1] < eval2[1] ? -1 : 0;
+            } else if (eval1[0] === 'ThreeOfAKind') {
+                if (eval1[1] !== eval2[1]) return eval1[1] > eval2[1] ? 1 : -1;
+                for (let i = 0; i < eval1[2].length; i++) {
+                    if (eval1[2][i] !== eval2[2][i]) return eval1[2][i] > eval2[2][i] ? 1 : -1;
+                }
+                return 0;
+            } else if (eval1[0] === 'TwoPair') {
+                for (let i = 0; i < eval1[1].length; i++) {
+                    if (eval1[1][i] !== eval2[1][i]) return eval1[1][i] > eval2[1][i] ? 1 : -1;
+                }
+                return eval1[2] > eval2[2] ? 1 : eval1[2] < eval2[2] ? -1 : 0;
+            } else if (eval1[0] === 'Pair') {
+                if (eval1[1] !== eval2[1]) return eval1[1] > eval2[1] ? 1 : -1;
+                for (let i = 0; i < eval1[2].length; i++) {
+                    if (eval1[2][i] !== eval2[2][i]) return eval1[2][i] > eval2[2][i] ? 1 : -1;
+                }
+                return 0;
+            } else { // HighCard
+                for (let i = 0; i < eval1[1].length; i++) {
+                    if (eval1[1][i] !== eval2[1][i]) return eval1[1][i] > eval2[1][i] ? 1 : -1;
+                }
+                return 0;
+            }
+        }
+
+        // Simulate game
+        function simulateGame(player1Hand, player2Hand, communityCards = [], numSimulations = 10000) {
+            let winsP1 = 0, winsP2 = 0, ties = 0;
+            const remainingDeck = deck.filter(card => 
+                !player1Hand.includes(card) && !player2Hand.includes(card) && !communityCards.includes(card)
+            );
+            const cardsNeeded = 4 - communityCards.length;
+
+            if (!remainingDeck.length) throw new Error("Invalid or duplicate cards detected");
+
+            for (let i = 0; i < numSimulations; i++) {
+                const simCommunity = [...communityCards];
+                const remaining = [...remainingDeck];
+                for (let j = 0; j < cardsNeeded; j++) {
+                    const randIndex = Math.floor(Math.random() * remaining.length);
+                    simCommunity.push(remaining[randIndex]);
+                    remaining.splice(randIndex, 1);
+                }
+                const result = compareHands(player1Hand, player2Hand, simCommunity);
+                if (result === 1) winsP1++;
+                else if (result === -1) winsP2++;
+                else ties++;
+            }
+
+            const p1WinRate = (winsP1 / numSimulations) * 100;
+            const p2WinRate = (winsP2 / numSimulations) * 100;
+            const tieRate = (ties / numSimulations) * 100;
+            return [p1WinRate, p2WinRate, tieRate];
+        }
+
+        // Main simulation runner
+        function runSimulation() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '';
+            resultDiv.style.display = 'none';
+
+            try {
+                const player1Input = document.getElementById('player1').value.split(',').map(s => s.trim());
+                const player2Input = document.getElementById('player2').value.split(',').map(s => s.trim());
+                const communityInput = document.getElementById('community').value.split(',').map(s => s.trim()).filter(Boolean);
+
+                // Validate inputs
+                const validCard = card => deck.includes(card) && card.length === 2;
+                if (player1Input.length !== 2 || !player1Input.every(validCard)) {
+                    throw new Error("Player 1 hand must have exactly 2 valid cards (e.g., As,5h)");
+                }
+                if (player2Input.length !== 2 || !player2Input.every(validCard)) {
+                    throw new Error("Player 2 hand must have exactly 2 valid cards (e.g., 8d,9c)");
+                }
+                if (communityInput.length > 4 || !communityInput.every(validCard)) {
+                    throw new Error("Community cards must be 0-4 valid cards (e.g., 2s,6h,7d)");
+                }
+
+                const [p1Win, p2Win, tie] = simulateGame(player1Input, player2Input, communityInput);
+                resultDiv.innerHTML = `
+                    <p><strong>Player 1 (${player1Input.join(', ')})</strong> Win Rate: ${p1Win.toFixed(2)}%</p>
+                    <p><strong>Player 2 (${player2Input.join(', ')})</strong> Win Rate: ${p2Win.toFixed(2)}%</p>
+                    <p><strong>Tie Probability:</strong> ${tie.toFixed(2)}%</p>
+                `;
+                resultDiv.style.display = 'block';
+            } catch (e) {
+                resultDiv.innerHTML = `<p class="error">Error: ${e.message}</p>`;
+                resultDiv.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>
